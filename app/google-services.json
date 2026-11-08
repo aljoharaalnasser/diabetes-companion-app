@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "714830132674",
+    "project_id": "diabetes-companion-cace7",
+    "storage_bucket": "diabetes-companion-cace7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:714830132674:android:77f29cd7e41c197eb8925b",
+        "android_client_info": {
+          "package_name": "com.z.diabetescompanion"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCtyPCOZnh8O_yx-gcW8M6dGLoUXJA2428"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

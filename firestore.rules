@@ -1,0 +1,93 @@
+rules_version = '2';
+
+// Diabetes Companion - Sprint 1 access rules (NFR-07).
+// Deploy with: firebase deploy --only firestore:rules
+// or paste into Firebase console > Firestore Database > Rules > Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // An active consent link from the patient to the caller.
+    function hasActiveLink(patientUid) {
+      let linkId = patientUid + '_' + request.auth.uid;
+      return signedIn()
+        && exists(/databases/$(database)/documents/careLinks/$(linkId))
+        && get(/databases/$(database)/documents/careLinks/$(linkId)).data.status == 'active';
+    }
+
+    function isLinkedDoctor(patientUid) {
+      let linkId = patientUid + '_' + request.auth.uid;
+      return hasActiveLink(patientUid)
+        && get(/databases/$(database)/documents/careLinks/$(linkId)).data.memberRole == 'doctor';
+    }
+
+    function validRole(role) {
+      return role in ['patient', 'doctor', 'caregiver', 'admin'];
+    }
+
+    // ---- Users -----------------------------------------------------------
+    match /users/{uid} {
+      // Any signed-in user can read basic directory info (needed to pick a doctor/caregiver).
+      allow read: if signedIn();
+      // Self-registration cannot create admins; role is immutable after creation.
+      allow create: if isSelf(uid)
+        && validRole(request.resource.data.role)
+        && request.resource.data.role != 'admin';
+      allow update: if isSelf(uid)
+        && request.resource.data.role == resource.data.role;
+      allow delete: if false;
+
+      // Patient-owned records: patient full access, linked care team read-only.
+      match /readings/{id} {
+        allow read: if isSelf(uid) || hasActiveLink(uid);
+        allow write: if isSelf(uid);
+      }
+      match /medications/{id} {
+        allow read: if isSelf(uid) || hasActiveLink(uid);
+        allow write: if isSelf(uid);
+      }
+      match /reminders/{id} {
+        allow read, write: if isSelf(uid);
+      }
+      // Thresholds are set by the linked doctor and readable by the patient and care team.
+      match /settings/thresholds {
+        allow read: if isSelf(uid) || hasActiveLink(uid);
+        allow write: if isLinkedDoctor(uid)
+          && request.resource.data.criticalLow < request.resource.data.targetLow
+          && request.resource.data.targetLow < request.resource.data.targetHigh
+          && request.resource.data.targetHigh < request.resource.data.criticalHigh;
+      }
+    }
+
+    // ---- Consent links ---------------------------------------------------
+    match /careLinks/{linkId} {
+      allow read: if signedIn()
+        && (resource.data.patientUid == request.auth.uid
+            || resource.data.memberUid == request.auth.uid);
+      // Only the patient can grant, and the id must be patientUid_memberUid.
+      allow create: if signedIn()
+        && request.resource.data.patientUid == request.auth.uid
+        && linkId == request.auth.uid + '_' + request.resource.data.memberUid
+        && request.resource.data.memberRole in ['doctor', 'caregiver']
+        && request.resource.data.status == 'active';
+      // Only the patient can revoke; nothing else about the link may change.
+      allow update: if signedIn()
+        && resource.data.patientUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'revokedAt']);
+      allow delete: if false;
+    }
+
+    // ---- Deletion requests (NFR-10) -------------------------------------
+    match /deletionRequests/{uid} {
+      allow read, create: if isSelf(uid);
+      allow update, delete: if false;
+    }
+  }
+}
