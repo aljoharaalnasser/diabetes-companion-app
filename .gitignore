@@ -16,3 +16,6 @@ local.properties
 
 # Local secrets (OpenAI key)
 .env
+
+# Kotlin compiler cache
+.kotlin/
