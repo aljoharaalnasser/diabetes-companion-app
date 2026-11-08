@@ -142,7 +142,7 @@ fun ThresholdsScreen(patientUid: String, onBack: () -> Unit, onSaved: () -> Unit
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     if (state.saved) LaunchedEffect(Unit) { onSaved() }
 
-    ScreenScaffold(title = "Glucose thresholds", onBack = onBack) { padding ->
+    ScreenScaffold(title = "Thresholds and ICR", onBack = onBack) { padding ->
         if (state.isLoading) {
             LoadingState(modifier = Modifier.padding(padding))
             return@ScreenScaffold
@@ -196,6 +196,9 @@ fun ThresholdsScreen(patientUid: String, onBack: () -> Unit, onSaved: () -> Unit
             Spacer(Modifier.height(20.dp))
             InlineMessage(message = state.formError, tone = MessageTone.Error, modifier = Modifier.padding(bottom = 12.dp))
             PrimaryButton(text = "Save thresholds", onClick = viewModel::save, loading = state.isSaving, enabled = state.canSave)
+            Spacer(Modifier.height(28.dp))
+            // Saved on its own, so the doctor can set the ICR without re-entering thresholds.
+            IcrSettingsSection(patientUid = patientUid, doctor = session.profile)
             Spacer(Modifier.height(20.dp))
             PrototypeNotice()
             Spacer(Modifier.height(24.dp))

@@ -2,23 +2,33 @@ package com.z.diabetescompanion.ui.shell
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.MedicalServices
 import androidx.compose.material.icons.rounded.Medication
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.z.diabetescompanion.ui.common.PlaceholderScreen
+import com.z.diabetescompanion.ui.alerts.AlertDetailScreen
+import com.z.diabetescompanion.ui.container
 import com.z.diabetescompanion.ui.currentSession
+import com.z.diabetescompanion.ui.messages.ChatScreen
+import com.z.diabetescompanion.ui.messages.ConversationLauncher
+import com.z.diabetescompanion.ui.messages.ConversationNavViewModel
+import com.z.diabetescompanion.ui.messages.ConversationsScreen
+import com.z.diabetescompanion.ui.patient.chatbot.ChatbotScreen
 import com.z.diabetescompanion.ui.patient.glucose.AddGlucoseScreen
 import com.z.diabetescompanion.ui.patient.glucose.GlucoseHistoryScreen
 import com.z.diabetescompanion.ui.patient.home.PatientHomeScreen
@@ -26,9 +36,13 @@ import com.z.diabetescompanion.ui.patient.medications.AddMedicationScreen
 import com.z.diabetescompanion.ui.patient.medications.MedicationsScreen
 import com.z.diabetescompanion.ui.patient.medications.ReminderEditScreen
 import com.z.diabetescompanion.ui.patient.profile.ProfileScreen
+import com.z.diabetescompanion.ui.patient.requests.NewInsulinRequestScreen
+import com.z.diabetescompanion.ui.patient.requests.PatientRequestDetailScreen
+import com.z.diabetescompanion.ui.patient.requests.PatientRequestsScreen
 import com.z.diabetescompanion.ui.patient.sharing.SharingScreen
 import com.z.diabetescompanion.ui.settings.PrivacyScreen
 import com.z.diabetescompanion.ui.settings.SettingsScreen
+import com.z.diabetescompanion.ui.summaries.WeeklySummaryScreen
 
 private object P {
     const val HOME = "patient/home"
@@ -47,8 +61,16 @@ private object P {
     const val SETTINGS = "patient/settings"
     const val PRIVACY = "patient/privacy"
     const val SUMMARIES = "patient/summaries"
-    const val INSULIN_REQUEST = "patient/insulin_request"
     const val CHATBOT = "patient/chatbot"
+    const val REQUESTS = "patient/requests"
+    const val REQUEST_NEW = "patient/requests/new"
+    const val REQUEST_DETAIL = "patient/requests/{id}"
+    const val ALERT = "patient/alert/{alertId}"
+    const val CHAT = "patient/chat/{conversationId}"
+
+    fun alert(alertId: String) = "patient/alert/$alertId"
+    fun chat(conversationId: String) = "patient/chat/$conversationId"
+    fun request(id: String) = "patient/requests/$id"
 }
 
 /** Patient navigation per the design brief: Home, History, Medications, Messages, More. */
@@ -62,16 +84,31 @@ fun PatientShell() {
         ShellTab(P.MORE, "More", Icons.Rounded.MoreHoriz),
     )
     val session = currentSession()
+    val navController = rememberNavController()
 
-    RoleShell(tabs = tabs, startRoute = P.HOME) { nav ->
+    // "Contact Doctor" has to resolve the assigned doctor before it can navigate.
+    val conversationNav: ConversationNavViewModel = viewModel {
+        val c = container()
+        ConversationNavViewModel(ConversationLauncher(c.careLinkRepository, c.messageRepository))
+    }
+    val chatDestination by conversationNav.destination.collectAsStateWithLifecycle()
+    LaunchedEffect(chatDestination) {
+        chatDestination?.let {
+            navController.navigate(P.chat(it))
+            conversationNav.consumeDestination()
+        }
+    }
+
+    RoleShell(tabs = tabs, startRoute = P.HOME, navController = navController) { nav ->
         composable(P.HOME) {
             PatientHomeScreen(
                 onAddGlucose = { nav.navigate(P.ADD_GLUCOSE) },
                 onLogMedication = { nav.navigate(P.ADD_MEDICATION) },
                 onOpenHistory = { nav.navigate(P.HISTORY) { launchSingleTop = true } },
                 onOpenReminders = { nav.navigate(P.REMINDERS) },
-                onAskDoctor = { nav.navigate(P.INSULIN_REQUEST) },
+                onAskDoctor = { nav.navigate(P.REQUESTS) },
                 onOpenChatbot = { nav.navigate(P.CHATBOT) },
+                onOpenAlert = { nav.navigate(P.alert(it)) },
             )
         }
         composable(P.HISTORY) {
@@ -86,17 +123,13 @@ fun PatientShell() {
             )
         }
         composable(P.MESSAGES) {
-            PlaceholderScreen(
-                title = "Messages",
-                description = "Text conversations with your assigned doctor, linked to your records.",
-                sprint = 2,
-                icon = Icons.AutoMirrored.Rounded.Chat,
-            )
+            ConversationsScreen(onOpenConversation = { nav.navigate(P.chat(it)) })
         }
         composable(P.MORE) {
             MoreScreen(
                 items = listOf(
                     MoreItem("Weekly summaries", "Glucose and medication overview by week.", Icons.Rounded.Summarize) { nav.navigate(P.SUMMARIES) },
+                    MoreItem("Insulin requests", "Ask your doctor and read their reply.", Icons.Rounded.MedicalServices) { nav.navigate(P.REQUESTS) },
                     MoreItem("Care-team sharing", "Grant or revoke access for your doctor and caregiver.", Icons.Rounded.Groups) { nav.navigate(P.SHARING) },
                     MoreItem("Profile", "Age, diabetes type, history and care plan.", Icons.Rounded.PersonOutline) { nav.navigate(P.PROFILE) },
                     MoreItem("Settings", "Text size, notifications and privacy.", Icons.Rounded.Settings) { nav.navigate(P.SETTINGS) },
@@ -108,8 +141,9 @@ fun PatientShell() {
         composable(P.ADD_GLUCOSE) {
             AddGlucoseScreen(
                 onBack = { nav.popBackStack() },
-                onOpenHistory = {
-                    nav.navigate(P.HISTORY) { popUpTo(P.HOME); launchSingleTop = true }
+                onOpenHistory = { nav.navigate(P.HISTORY) { popUpTo(P.HOME); launchSingleTop = true } },
+                onOpenAlert = { alertId ->
+                    nav.navigate(P.alert(alertId)) { popUpTo(P.HOME) }
                 },
             )
         }
@@ -137,6 +171,48 @@ fun PatientShell() {
                 onSaved = { nav.popBackStack() },
             )
         }
+
+        composable(P.ALERT, arguments = listOf(navArgument("alertId") { type = NavType.StringType })) { entry ->
+            AlertDetailScreen(
+                patientUid = session.uid,
+                alertId = entry.arguments?.getString("alertId").orEmpty(),
+                onBack = { nav.popBackStack() },
+                onContactDoctor = { conversationNav.openWithDoctor(session.profile) },
+            )
+        }
+        composable(P.CHAT, arguments = listOf(navArgument("conversationId") { type = NavType.StringType })) { entry ->
+            ChatScreen(
+                conversationId = entry.arguments?.getString("conversationId").orEmpty(),
+                onBack = { nav.popBackStack() },
+            )
+        }
+
+        composable(P.CHATBOT) {
+            ChatbotScreen(
+                onBack = { nav.popBackStack() },
+                onAskDoctor = { nav.navigate(P.REQUEST_NEW) },
+            )
+        }
+        composable(P.REQUESTS) {
+            PatientRequestsScreen(
+                onBack = { nav.popBackStack() },
+                onNewRequest = { nav.navigate(P.REQUEST_NEW) },
+                onOpenRequest = { nav.navigate(P.request(it)) },
+            )
+        }
+        composable(P.REQUEST_NEW) {
+            NewInsulinRequestScreen(onBack = { nav.popBackStack() }, onSubmitted = { nav.popBackStack() })
+        }
+        composable(P.REQUEST_DETAIL, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            PatientRequestDetailScreen(
+                requestId = entry.arguments?.getString("id").orEmpty(),
+                onBack = { nav.popBackStack() },
+            )
+        }
+
+        composable(P.SUMMARIES) {
+            WeeklySummaryScreen(patientUid = session.uid, onBack = { nav.popBackStack() })
+        }
         composable(P.PROFILE) { ProfileScreen(onBack = { nav.popBackStack() }) }
         composable(P.SHARING) { SharingScreen(onBack = { nav.popBackStack() }) }
         composable(P.SETTINGS) {
@@ -144,33 +220,6 @@ fun PatientShell() {
         }
         composable(P.PRIVACY) {
             PrivacyScreen(onBack = { nav.popBackStack() }, onOpenSharing = { nav.navigate(P.SHARING) })
-        }
-        composable(P.SUMMARIES) {
-            PlaceholderScreen(
-                title = "Weekly summaries",
-                description = "Date range, glucose chart, high/low events and a plain-language overview.",
-                sprint = 2,
-                icon = Icons.Rounded.Insights,
-                onBack = { nav.popBackStack() },
-            )
-        }
-        composable(P.INSULIN_REQUEST) {
-            PlaceholderScreen(
-                title = "Ask the doctor about your insulin dose",
-                description = "Send your question with your recent readings and doses for your doctor to review. Responses are not immediate and this is not an emergency channel.",
-                sprint = 2,
-                icon = Icons.Rounded.MedicalServices,
-                onBack = { nav.popBackStack() },
-            )
-        }
-        composable(P.CHATBOT) {
-            PlaceholderScreen(
-                title = "Diabetes Companion chat",
-                description = "General guidance only. No insulin-dose recommendations.",
-                sprint = 2,
-                icon = Icons.AutoMirrored.Rounded.Chat,
-                onBack = { nav.popBackStack() },
-            )
         }
     }
 }

@@ -2,9 +2,14 @@ package com.z.diabetescompanion.data.auth
 
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
+import android.util.Log
 import com.z.diabetescompanion.data.firestore.toFirestoreMessage
+import com.z.diabetescompanion.data.model.IcrEnteredBy
+import com.z.diabetescompanion.data.model.IcrSetting
+import com.z.diabetescompanion.data.model.IcrStatus
 import com.z.diabetescompanion.data.model.UserProfile
 import com.z.diabetescompanion.data.model.UserRole
+import com.z.diabetescompanion.data.repository.IcrRepository
 import com.z.diabetescompanion.data.repository.UserRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +20,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import java.util.Date
+import java.util.UUID
 
 /**
  * Account operations that must outlive the screen that started them (FR-01, FR-02).
@@ -27,6 +34,7 @@ import kotlinx.coroutines.flow.stateIn
 class AccountService(
     private val authRepository: AuthRepository,
     private val userRepository: UserRepository,
+    private val icrRepository: IcrRepository,
     private val appScope: CoroutineScope,
 ) {
     private val _registrationInProgress = MutableStateFlow(false)
@@ -103,23 +111,55 @@ class AccountService(
         return AuthResult.Success(Unit)
     }
 
+    /**
+     * [initialIcrGramsPerUnit] is the optional ratio a patient may type at sign-up. It is always
+     * saved as UNCONFIRMED; only the linked doctor can confirm it.
+     */
     suspend fun register(
         displayName: String,
         email: String,
         password: String,
         role: UserRole,
+        initialIcrGramsPerUnit: Double? = null,
     ): AuthResult<Unit> = appScope.async {
         _registrationInProgress.value = true
         lastSelectedRole = role
         try {
             when (val auth = authRepository.signUp(displayName, email, password)) {
                 is AuthResult.Error -> auth
-                is AuthResult.Success -> createProfile(auth.data.uid, displayName, email, role)
+                is AuthResult.Success -> {
+                    val created = createProfile(auth.data.uid, displayName, email, role)
+                    if (created is AuthResult.Success && role == UserRole.Patient && initialIcrGramsPerUnit != null) {
+                        saveInitialIcr(auth.data.uid, initialIcrGramsPerUnit)
+                    }
+                    created
+                }
             }
         } finally {
             _registrationInProgress.value = false
         }
     }.await()
+
+    /** Best effort: if this fails the chatbot simply asks for the ratio on first use. */
+    private suspend fun saveInitialIcr(uid: String, gramsPerUnit: Double) {
+        try {
+            icrRepository.create(
+                IcrSetting(
+                    icrId = UUID.randomUUID().toString(),
+                    patientId = uid,
+                    gramsPerUnit = gramsPerUnit,
+                    status = IcrStatus.Unconfirmed,
+                    enteredBy = IcrEnteredBy.Patient,
+                    version = 1,
+                    effectiveFrom = Date(),
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not save the sign-up ICR; the chatbot will ask again", e)
+        }
+    }
 
     /** Also used by the "complete your profile" screen for accounts that pre-date roles. */
     suspend fun createProfile(
@@ -140,5 +180,6 @@ class AccountService(
 
     private companion object {
         const val SIGN_OUT_TIMEOUT_MS = 3_000L
+        const val TAG = "AccountService"
     }
 }

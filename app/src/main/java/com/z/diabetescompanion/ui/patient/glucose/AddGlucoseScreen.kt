@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.z.diabetescompanion.data.model.Alert
 import com.z.diabetescompanion.data.model.GlucoseReading
 import com.z.diabetescompanion.data.model.GlucoseUnit
 import com.z.diabetescompanion.domain.formatGlucose
@@ -56,9 +57,13 @@ import com.z.diabetescompanion.ui.theme.AppTheme
 fun AddGlucoseScreen(
     onBack: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenAlert: (String) -> Unit,
 ) {
     val session = currentSession()
-    val viewModel: AddGlucoseViewModel = viewModel { AddGlucoseViewModel(session.uid, container().glucoseRepository) }
+    val viewModel: AddGlucoseViewModel = viewModel {
+        val c = container()
+        AddGlucoseViewModel(session.profile, c.glucoseRepository, c.alertService)
+    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     ScreenScaffold(title = "Add glucose reading", onBack = onBack) { padding ->
@@ -71,8 +76,10 @@ fun AddGlucoseScreen(
             if (saved != null) {
                 SavedConfirmation(
                     reading = saved,
+                    alert = state.raisedAlert,
                     onAddAnother = viewModel::reset,
                     onViewHistory = onOpenHistory,
+                    onViewAlert = { state.raisedAlert?.let { onOpenAlert(it.id) } },
                     onDone = onBack,
                 )
             } else {
@@ -159,8 +166,10 @@ private fun EntryForm(state: AddGlucoseUiState, viewModel: AddGlucoseViewModel) 
 @Composable
 private fun SavedConfirmation(
     reading: GlucoseReading,
+    alert: Alert?,
     onAddAnother: () -> Unit,
     onViewHistory: () -> Unit,
+    onViewAlert: () -> Unit,
     onDone: () -> Unit,
 ) {
     val clinical = AppTheme.clinical
@@ -191,8 +200,20 @@ private fun SavedConfirmation(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(32.dp))
-        PrimaryButton(text = "Done", onClick = onDone)
+        if (alert != null) {
+            Spacer(Modifier.height(20.dp))
+            InlineMessage(
+                message = "This reading is outside your target range, so a ${alert.severity.label.lowercase()} alert was raised. Open it to tell your care team how you are.",
+                tone = MessageTone.Warning,
+            )
+            Spacer(Modifier.height(12.dp))
+            PrimaryButton(text = "Respond to the alert", onClick = onViewAlert)
+            Spacer(Modifier.height(12.dp))
+            SecondaryButton(text = "Done", onClick = onDone)
+        } else {
+            Spacer(Modifier.height(32.dp))
+            PrimaryButton(text = "Done", onClick = onDone)
+        }
         Spacer(Modifier.height(12.dp))
         SecondaryButton(text = "View history", onClick = onViewHistory)
         Spacer(Modifier.height(12.dp))

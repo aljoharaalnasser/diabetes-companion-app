@@ -6,6 +6,7 @@ import com.z.diabetescompanion.data.auth.AccountService
 import com.z.diabetescompanion.data.auth.AuthRepository
 import com.z.diabetescompanion.data.auth.onError
 import com.z.diabetescompanion.data.model.UserRole
+import com.z.diabetescompanion.domain.MealInsulinValidation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +19,9 @@ data class SignUpUiState(
     val password: String = "",
     val confirmPassword: String = "",
     val role: UserRole = UserRole.Patient,
+    /** Optional insulin-to-carb ratio (g per unit). Patients only; saved as UNCONFIRMED. */
+    val icr: String = "",
+    val icrError: String? = null,
     val nameError: String? = null,
     val emailError: String? = null,
     val passwordError: String? = null,
@@ -57,7 +61,11 @@ class SignUpViewModel(
     fun onConfirmPasswordChange(value: String) =
         _uiState.update { it.copy(confirmPassword = value, confirmPasswordError = null, formError = null) }
 
-    fun onRoleChange(role: UserRole) = _uiState.update { it.copy(role = role) }
+    fun onRoleChange(role: UserRole) = _uiState.update { it.copy(role = role, icrError = null) }
+
+    fun onIcrChange(value: String) = _uiState.update {
+        it.copy(icr = value.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(5), icrError = null, formError = null)
+    }
 
     fun submit() {
         val state = _uiState.value
@@ -67,22 +75,27 @@ class SignUpViewModel(
         val emailError = AuthValidation.emailError(state.email)
         val passwordError = AuthValidation.newPasswordError(state.password)
         val confirmError = AuthValidation.confirmPasswordError(state.password, state.confirmPassword)
+        // The ratio is optional: blank skips it, anything typed must be valid.
+        val askIcr = state.role == UserRole.Patient && state.icr.isNotBlank()
+        val icrError = if (askIcr) MealInsulinValidation.icrError(state.icr) else null
 
-        if (listOf(nameError, emailError, passwordError, confirmError).any { it != null }) {
+        if (listOf(nameError, emailError, passwordError, confirmError, icrError).any { it != null }) {
             _uiState.update {
                 it.copy(
                     nameError = nameError,
                     emailError = emailError,
                     passwordError = passwordError,
                     confirmPasswordError = confirmError,
+                    icrError = icrError,
                 )
             }
             return
         }
 
+        val icr = if (askIcr) MealInsulinValidation.parse(state.icr) else null
         _uiState.update { it.copy(isLoading = true, formError = null) }
         viewModelScope.launch {
-            accountService.register(state.name, state.email, state.password, state.role)
+            accountService.register(state.name, state.email, state.password, state.role, icr)
                 .onError { message -> _uiState.update { it.copy(formError = message) } }
             _uiState.update { it.copy(isLoading = false) }
         }

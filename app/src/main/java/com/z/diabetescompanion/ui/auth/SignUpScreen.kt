@@ -29,6 +29,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.z.diabetescompanion.data.model.UserRole
 import com.z.diabetescompanion.ui.AppViewModelProvider
 import com.z.diabetescompanion.ui.components.AppTextField
 import com.z.diabetescompanion.ui.components.InlineMessage
@@ -105,6 +106,27 @@ fun SignUpScreen(
                 viewModel.submit()
             }),
         )
+
+        if (state.role == UserRole.Patient) {
+            Spacer(Modifier.height(14.dp))
+            AppTextField(
+                value = state.icr,
+                onValueChange = viewModel::onIcrChange,
+                label = "Insulin-to-carb ratio (optional)",
+                placeholder = "Grams of carbs per 1 unit, e.g. 10",
+                errorText = state.icrError,
+                enabled = !state.isLoading,
+                keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Done,
+            )
+            Text(
+                text = "1 unit for every X g of carbs. You can skip this. Your doctor must confirm it " +
+                    "before the app can calculate a meal dose.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 4.dp, end = 8.dp),
+            )
+        }
 
         Spacer(Modifier.height(16.dp))
         InlineMessage(message = state.formError, tone = MessageTone.Error, modifier = Modifier.padding(bottom = 12.dp))

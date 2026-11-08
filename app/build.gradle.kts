@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -16,6 +18,20 @@ if (file("google-services.json").exists()) {
     )
 }
 
+/**
+ * Secrets come from a git-ignored .env at the repo root (falling back to the environment),
+ * so no key is ever committed. Note: anything baked into BuildConfig ships inside the APK
+ * and can be extracted, which is acceptable for an academic prototype but would need a
+ * server-side proxy before any real deployment.
+ */
+val envProperties = Properties().apply {
+    val envFile = rootProject.file(".env")
+    if (envFile.exists()) envFile.inputStream().use { load(it) }
+}
+
+fun secret(key: String): String =
+    (envProperties.getProperty(key) ?: System.getenv(key) ?: "").trim()
+
 android {
     namespace = "com.z.diabetescompanion"
     compileSdk {
@@ -30,6 +46,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "OPENAI_API_KEY", "\"${secret("OPENAI_API_KEY")}\"")
+        buildConfigField("String", "OPENAI_MODEL", "\"${secret("OPENAI_MODEL").ifEmpty { "gpt-6-luna" }}\"")
     }
 
     buildTypes {
@@ -47,6 +66,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -73,10 +93,13 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.play.services)
 
     // Tests
     testImplementation(libs.junit)
+    // Real org.json for JVM tests of the carb JSON parser (android.jar only ships stubs).
+    testImplementation(libs.org.json)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

@@ -3,9 +3,12 @@ package com.z.diabetescompanion.ui.patient.glucose
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.z.diabetescompanion.data.firestore.toFirestoreMessage
+import com.z.diabetescompanion.data.alerts.AlertService
+import com.z.diabetescompanion.data.model.Alert
 import com.z.diabetescompanion.data.model.GlucoseReading
 import com.z.diabetescompanion.data.model.GlucoseUnit
 import com.z.diabetescompanion.data.model.ReadingSource
+import com.z.diabetescompanion.data.model.UserProfile
 import com.z.diabetescompanion.data.repository.GlucoseRepository
 import com.z.diabetescompanion.domain.DemoReadingGenerator
 import com.z.diabetescompanion.domain.GlucoseValidation
@@ -31,15 +34,20 @@ data class AddGlucoseUiState(
     val isSaving: Boolean = false,
     /** Non-null after a successful save: the screen swaps to the confirmation. */
     val saved: GlucoseReading? = null,
+    /** Set when the saved reading was out of range and raised an alert (FR-08). */
+    val raisedAlert: Alert? = null,
 ) {
     val canSave: Boolean get() = !isSaving && valueText.isNotBlank()
 }
 
 /** Manual entry + demo generation (S1-03). */
 class AddGlucoseViewModel(
-    private val uid: String,
+    private val patient: UserProfile,
     private val glucoseRepository: GlucoseRepository,
+    private val alertService: AlertService,
 ) : ViewModel() {
+
+    private val uid: String get() = patient.uid
 
     private val _uiState = MutableStateFlow(AddGlucoseUiState())
     val uiState: StateFlow<AddGlucoseUiState> = _uiState.asStateFlow()
@@ -89,7 +97,10 @@ class AddGlucoseViewModel(
         viewModelScope.launch {
             try {
                 glucoseRepository.save(uid, reading)
-                _uiState.update { it.copy(isSaving = false, saved = reading) }
+                // Threshold check runs right after the save, so the alert and its escalation
+                // timer start from the moment the reading exists (FR-08, FR-09).
+                val alert = alertService.onReadingSaved(patient, reading)
+                _uiState.update { it.copy(isSaving = false, saved = reading, raisedAlert = alert) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
