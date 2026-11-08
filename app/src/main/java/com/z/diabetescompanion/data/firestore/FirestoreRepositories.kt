@@ -27,6 +27,7 @@ import com.z.diabetescompanion.data.repository.ReminderRepository
 import com.z.diabetescompanion.data.repository.ThresholdRepository
 import com.z.diabetescompanion.data.repository.UserRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 
@@ -36,6 +37,11 @@ class FirestoreUserRepository(private val db: FirebaseFirestore) : UserRepositor
 
     override fun profile(uid: String): Flow<UserProfile?> =
         db.user(uid).snapshotFlow().map { it.toUserProfile() }
+
+    override fun serverProfile(uid: String): Flow<UserProfile?> =
+        db.user(uid).snapshotFlow()
+            .filterNot { it.metadata.isFromCache }
+            .map { it.toUserProfile() }
 
     override suspend fun getProfile(uid: String): UserProfile? =
         db.user(uid).get().await().toUserProfile()

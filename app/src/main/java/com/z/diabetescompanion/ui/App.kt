@@ -5,8 +5,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.z.diabetescompanion.data.prefs.ThemeMode
 import com.z.diabetescompanion.di.AppContainer
 import com.z.diabetescompanion.ui.navigation.AppNavHost
 import com.z.diabetescompanion.ui.navigation.RootViewModel
@@ -27,8 +29,13 @@ fun DiabetesCompanionApp(
         density = baseDensity.density,
         fontScale = baseDensity.fontScale * prefs.textSize.scale,
     )
+    val darkTheme = when (prefs.themeMode) {
+        ThemeMode.System -> isSystemInDarkTheme()
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
 
-    DiabetesCompanionTheme {
+    DiabetesCompanionTheme(darkTheme = darkTheme) {
         CompositionLocalProvider(
             LocalDensity provides scaledDensity,
             LocalAppContainer provides container,

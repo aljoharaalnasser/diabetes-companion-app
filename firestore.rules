@@ -43,16 +43,42 @@ service cloud.firestore {
       return role in ['patient', 'doctor', 'caregiver', 'admin'];
     }
 
+    // The administrator role (FR-14). Self-registration cannot create one, so the first
+    // admin is promoted by an existing admin, or set directly in the Firebase console.
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     // ---- Users -----------------------------------------------------------
     match /users/{uid} {
       // Any signed-in user can read basic directory info (needed to pick a doctor/caregiver).
       allow read: if signedIn();
-      // Self-registration cannot create admins; role is immutable after creation.
+      // Self-registration cannot create admins, and no account starts out suspended.
       allow create: if isSelf(uid)
         && validRole(request.resource.data.role)
-        && request.resource.data.role != 'admin';
-      allow update: if isSelf(uid)
-        && request.resource.data.role == resource.data.role;
+        && request.resource.data.role != 'admin'
+        && request.resource.data.get('accountStatus', 'active') == 'active';
+      // An account may edit its own profile but can never CHANGE its own role or account
+      // status, so nobody promotes themselves or lifts their own suspension. (Rewriting
+      // either with the value already stored is a no-op and is allowed.) An administrator
+      // may change those two fields on OTHER accounts and nothing else, which also means an
+      // admin cannot demote or suspend themselves and lock the platform out (FR-14).
+      //
+      // Note what this does NOT do: a suspended account is refused at sign-in and has any
+      // open session ended by the app, but these rules do not make its other records
+      // read-only. That would need a get() on the user document in every write rule.
+      allow update: if (isSelf(uid)
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.get('accountStatus', 'active')
+               == resource.data.get('accountStatus', 'active'))
+        || (isAdmin()
+          && uid != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['role', 'accountStatus', 'updatedAt'])
+          && validRole(request.resource.data.role)
+          && request.resource.data.get('accountStatus', 'active') in ['active', 'suspended']);
       allow delete: if false;
 
       // Patient-owned records: patient full access, linked care team read-only.
@@ -165,6 +191,15 @@ service cloud.firestore {
       }
     }
 
+    // ---- Administrator reporting (FR-14) ---------------------------------
+    // Alerts live under the patient who owns them, so an admin has no consent link to read
+    // them through. This collection-group rule gives that one role a cross-patient read of
+    // alert status, and nothing else: readings, medication, conversations, insulin requests
+    // and AI drafts stay out of reach, because running the platform does not need them.
+    match /{path=**}/alerts/{alertId} {
+      allow read: if isAdmin();
+    }
+
     // ---- Consent links ---------------------------------------------------
     match /careLinks/{linkId} {
       // The patient, the member on the link, and anyone else already on that patient's
@@ -172,7 +207,9 @@ service cloud.firestore {
       allow read: if signedIn()
         && (resource.data.patientUid == request.auth.uid
             || resource.data.memberUid == request.auth.uid
-            || hasActiveLink(resource.data.patientUid));
+            || hasActiveLink(resource.data.patientUid)
+            // Admins count active cases and care-team coverage (FR-14).
+            || isAdmin());
       // Only the patient can grant, and the id must be patientUid_memberUid.
       allow create: if signedIn()
         && request.resource.data.patientUid == request.auth.uid
@@ -242,8 +279,16 @@ service cloud.firestore {
 
     // ---- Deletion requests (NFR-10) -------------------------------------
     match /deletionRequests/{uid} {
-      allow read, create: if isSelf(uid);
-      allow update, delete: if false;
+      allow read: if isSelf(uid) || isAdmin();
+      allow create: if isSelf(uid);
+      // Only an administrator closes a request, and only ever by marking it completed, so
+      // the record of the request itself can never be rewritten or withdrawn (NFR-10).
+      allow update: if isAdmin()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.status == 'completed'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'completedAt', 'completedByName']);
+      allow delete: if false;
     }
   }
 }

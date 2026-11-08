@@ -9,9 +9,26 @@ import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.composable
-import com.z.diabetescompanion.ui.common.PlaceholderScreen
+import com.z.diabetescompanion.ui.admin.AdminAlertsScreen
+import com.z.diabetescompanion.ui.admin.AdminAnalyticsScreen
+import com.z.diabetescompanion.ui.admin.AdminOverviewScreen
+import com.z.diabetescompanion.ui.admin.AdminUsersScreen
+import com.z.diabetescompanion.ui.admin.AdminViewModel
+import com.z.diabetescompanion.ui.container
+import com.z.diabetescompanion.ui.currentSession
 import com.z.diabetescompanion.ui.patient.profile.ProfileScreen
 import com.z.diabetescompanion.ui.settings.PrivacyScreen
 import com.z.diabetescompanion.ui.settings.SettingsScreen
@@ -27,9 +44,28 @@ private object A {
     const val PRIVACY = "admin/privacy"
 }
 
-/** Admin navigation. Screens arrive in Sprint 3 (S3-01) on top of Sprint 2 aggregate queries. */
+/**
+ * Admin navigation (S3-01). One [AdminViewModel] is shared by all four tabs, so the
+ * overview's counts and the lists below them are always the same snapshot of the data.
+ */
 @Composable
 fun AdminShell() {
+    val session = currentSession()
+    val viewModel: AdminViewModel = viewModel {
+        AdminViewModel(container().adminRepository, session.profile.displayName)
+    }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val pendingUid by viewModel.pendingUid.collectAsStateWithLifecycle()
+    val actionMessage by viewModel.actionMessage.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(actionMessage) {
+        actionMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearActionMessage()
+        }
+    }
+
     val tabs = listOf(
         ShellTab(A.OVERVIEW, "Overview", Icons.Rounded.Dashboard),
         ShellTab(A.USERS, "Users", Icons.Rounded.ManageAccounts),
@@ -37,30 +73,36 @@ fun AdminShell() {
         ShellTab(A.ANALYTICS, "Analytics", Icons.Rounded.Insights),
         ShellTab(A.MORE, "More", Icons.Rounded.MoreHoriz),
     )
-    RoleShell(tabs = tabs, startRoute = A.OVERVIEW) { nav ->
-        composable(A.OVERVIEW) {
-            PlaceholderScreen("Overview", "Total patients, active cases and alert counts.", sprint = 3, icon = Icons.Rounded.Dashboard)
-        }
-        composable(A.USERS) {
-            PlaceholderScreen("Users", "User list and account-management details.", sprint = 3, icon = Icons.Rounded.ManageAccounts)
-        }
-        composable(A.ALERTS) {
-            PlaceholderScreen("Operational alerts", "Alert review and resolution-status monitoring.", sprint = 3, icon = Icons.Rounded.NotificationsActive)
-        }
-        composable(A.ANALYTICS) {
-            PlaceholderScreen("Analytics", "Aggregate analytics across the platform.", sprint = 3, icon = Icons.Rounded.Insights)
-        }
-        composable(A.MORE) {
-            MoreScreen(
-                items = listOf(
-                    MoreItem("Profile", "Your account details.", Icons.Rounded.PersonOutline) { nav.navigate(A.PROFILE) },
-                    MoreItem("Settings", "Text size and notifications.", Icons.Rounded.Settings) { nav.navigate(A.SETTINGS) },
-                    MoreItem("Privacy", "How data is protected.", Icons.Rounded.Shield) { nav.navigate(A.PRIVACY) },
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        RoleShell(tabs = tabs, startRoute = A.OVERVIEW) { nav ->
+            composable(A.OVERVIEW) { AdminOverviewScreen(state) }
+            composable(A.USERS) {
+                AdminUsersScreen(
+                    state = state,
+                    pendingUid = pendingUid,
+                    onSetRole = viewModel::setRole,
+                    onSetStatus = viewModel::setStatus,
+                    onCompleteDeletion = viewModel::completeDeletionRequest,
                 )
-            )
+            }
+            composable(A.ALERTS) { AdminAlertsScreen(state) }
+            composable(A.ANALYTICS) { AdminAnalyticsScreen(state) }
+            composable(A.MORE) {
+                MoreScreen(
+                    items = listOf(
+                        MoreItem("Profile", "Your account details.", Icons.Rounded.PersonOutline) { nav.navigate(A.PROFILE) },
+                        MoreItem("Settings", "Appearance, text size and notifications.", Icons.Rounded.Settings) { nav.navigate(A.SETTINGS) },
+                        MoreItem("Privacy", "How data is protected.", Icons.Rounded.Shield) { nav.navigate(A.PRIVACY) },
+                    )
+                )
+            }
+            composable(A.PROFILE) { ProfileScreen(onBack = { nav.popBackStack() }) }
+            composable(A.SETTINGS) { SettingsScreen(onBack = { nav.popBackStack() }, onOpenPrivacy = { nav.navigate(A.PRIVACY) }) }
+            composable(A.PRIVACY) { PrivacyScreen(onBack = { nav.popBackStack() }, onOpenSharing = null) }
         }
-        composable(A.PROFILE) { ProfileScreen(onBack = { nav.popBackStack() }) }
-        composable(A.SETTINGS) { SettingsScreen(onBack = { nav.popBackStack() }, onOpenPrivacy = { nav.navigate(A.PRIVACY) }) }
-        composable(A.PRIVACY) { PrivacyScreen(onBack = { nav.popBackStack() }, onOpenSharing = null) }
+
+        // Hosted above the shell so an account operation's result is visible on any tab.
+        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }

@@ -97,18 +97,33 @@ class AccountService(
         // No profile yet: the complete-profile screen handles it, seeded with this role.
         if (profile == null) return AuthResult.Success(Unit)
 
+        // A suspended account is refused before its role is even considered (FR-14).
+        if (profile.isSuspended) return reject(SUSPENDED_MESSAGE)
+
         if (profile.role != expectedRole) {
-            val message = "This account is registered as a ${profile.role.label}. " +
-                "Select ${profile.role.label} to sign in."
-            // Publish first: the nav host reads this to decide where to send the user back to.
-            _signInError.value = message
-            authRepository.signOut()
-            // Stay "busy" until the sign-out has actually propagated, otherwise the combine
-            // in RootViewModel briefly sees (old user, profile loaded, not busy) = Ready.
-            withTimeoutOrNull(SIGN_OUT_TIMEOUT_MS) { authRepository.authState.first { it == null } }
-            return AuthResult.Error(message)
+            return reject(
+                "This account is registered as a ${profile.role.label}. " +
+                    "Select ${profile.role.label} to sign in."
+            )
         }
         return AuthResult.Success(Unit)
+    }
+
+    /** Signs the user back out and leaves [message] where the rebuilt login screen can read it. */
+    private suspend fun reject(message: String): AuthResult<Unit> {
+        // Publish first: the nav host reads this to decide where to send the user back to.
+        _signInError.value = message
+        authRepository.signOut()
+        // Stay "busy" until the sign-out has actually propagated, otherwise the combine
+        // in RootViewModel briefly sees (old user, profile loaded, not busy) = Ready.
+        withTimeoutOrNull(SIGN_OUT_TIMEOUT_MS) { authRepository.authState.first { it == null } }
+        return AuthResult.Error(message)
+    }
+
+    /** Ends an open session whose account was suspended while it was running. */
+    fun signOutSuspended() {
+        _signInError.value = SUSPENDED_MESSAGE
+        authRepository.signOut()
     }
 
     /**
@@ -178,8 +193,12 @@ class AccountService(
         AuthResult.Error(e.toFirestoreMessage(), e)
     }
 
-    private companion object {
-        const val SIGN_OUT_TIMEOUT_MS = 3_000L
-        const val TAG = "AccountService"
+    companion object {
+        const val SUSPENDED_MESSAGE =
+            "This account has been suspended by an administrator. Contact the project team to " +
+                "have it reactivated."
+
+        private const val SIGN_OUT_TIMEOUT_MS = 3_000L
+        private const val TAG = "AccountService"
     }
 }

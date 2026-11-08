@@ -17,6 +17,17 @@ import kotlinx.coroutines.flow.Flow
 
 interface UserRepository {
     fun profile(uid: String): Flow<UserProfile?>
+
+    /**
+     * Like [profile], but never emits the local cache: only snapshots the server confirmed.
+     *
+     * Needed for the suspension check (FR-14). A Firestore listener replays its cached copy
+     * before the server answers, so an account that was suspended and then reactivated would
+     * emit `suspended` from cache, and acting on that ends the session and tears the listener
+     * down before the server's `active` ever arrives, locking the account out of its own app.
+     */
+    fun serverProfile(uid: String): Flow<UserProfile?>
+
     suspend fun getProfile(uid: String): UserProfile?
     suspend fun createProfile(profile: UserProfile)
     suspend fun updateProfile(profile: UserProfile)

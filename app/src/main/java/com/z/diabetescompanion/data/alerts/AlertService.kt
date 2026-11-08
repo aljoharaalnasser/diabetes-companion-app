@@ -2,6 +2,7 @@ package com.z.diabetescompanion.data.alerts
 
 import android.content.Context
 import android.util.Log
+import com.z.diabetescompanion.data.prefs.UserPreferencesRepository
 import com.z.diabetescompanion.data.model.Alert
 import com.z.diabetescompanion.data.model.AlertEvent
 import com.z.diabetescompanion.data.model.GlucoseReading
@@ -26,7 +27,24 @@ class AlertService(
     private val alertRepository: AlertRepository,
     private val thresholdRepository: ThresholdRepository,
     private val scheduler: AlertEscalationScheduler,
+    private val preferencesRepository: UserPreferencesRepository,
 ) {
+
+    /**
+     * Honours the alert-notification setting (S3-02). Escalation itself is never silenced:
+     * the stage still advances and is still recorded, so the care team sees the alert in
+     * their app either way. Only the local notification is suppressed.
+     */
+    private suspend fun notify(alert: Alert) {
+        val allowed = try {
+            preferencesRepository.preferences.first().alertsAllowed
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            true // Can't read the preference: notifying is the safer failure for an alert.
+        }
+        if (allowed) AlertNotifier.notifyStage(context, alert)
+    }
 
     /** Called right after a reading is saved. Returns the alert if one was raised. */
     suspend fun onReadingSaved(patient: UserProfile, reading: GlucoseReading): Alert? {
@@ -35,7 +53,7 @@ class AlertService(
         return try {
             alertRepository.save(alert, isNew = true)
             scheduler.schedule(alert)
-            AlertNotifier.notifyStage(context, alert)
+            notify(alert)
             alert
         } catch (e: CancellationException) {
             throw e
@@ -76,7 +94,7 @@ class AlertService(
         )
         alertRepository.save(logged, isNew = false)
         scheduler.schedule(logged)
-        AlertNotifier.notifyStage(context, logged)
+        notify(logged)
         return logged
     }
 

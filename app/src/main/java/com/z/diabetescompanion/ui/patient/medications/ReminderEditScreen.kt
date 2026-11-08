@@ -212,7 +212,8 @@ fun ReminderEditScreen(
                 }
                 Spacer(Modifier.height(8.dp))
             }
-            if (!session.preferences.notificationsEnabled) {
+            // Either the master switch or the medication-reminder category can silence these.
+            if (!session.preferences.remindersAllowed) {
                 InlineMessage(message = "Reminder notifications are switched off in Settings.", tone = MessageTone.Info)
                 Spacer(Modifier.height(12.dp))
             }
