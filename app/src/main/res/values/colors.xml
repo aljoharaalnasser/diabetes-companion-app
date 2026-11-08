@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_blue">#1A7CF0</color>
+    <color name="brand_blue_deep">#0F4FC0</color>
+    <color name="brand_red">#E53935</color>
+    <color name="splash_background">#EAF3FF</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+</resources>
