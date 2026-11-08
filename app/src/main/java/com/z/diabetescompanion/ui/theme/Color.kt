@@ -48,7 +48,7 @@ val NeutralOnSurfaceVariantDark = Color(0xFFB3BFD6)
 val NeutralOutlineDark = Color(0xFF7E8BA6)
 val NeutralOutlineVariantDark = Color(0xFF38445C)
 
-val ErrorLight = Color(0xFFC62828)
+val ErrorLight = Color(0xFFF44336)
 val ErrorDark = Color(0xFFFF8A80)
 
 /**

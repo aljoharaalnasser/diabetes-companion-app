@@ -10,6 +10,7 @@ import com.z.diabetescompanion.data.model.GlucoseReading
 import com.z.diabetescompanion.data.model.GlucoseUnit
 import com.z.diabetescompanion.data.model.MedicationKind
 import com.z.diabetescompanion.data.model.MedicationLog
+import com.z.diabetescompanion.data.model.MedicationSource
 import com.z.diabetescompanion.data.model.ReadingSource
 import com.z.diabetescompanion.data.model.Reminder
 import com.z.diabetescompanion.data.model.Thresholds
@@ -103,6 +104,8 @@ fun MedicationLog.toMap(): Map<String, Any?> = mapOf(
     "kind" to kind.storageKey,
     "takenAt" to Timestamp(takenAt),
     "note" to note,
+    "source" to source.storageKey,
+    "suggestionId" to suggestionId,
     "createdAt" to FieldValue.serverTimestamp(),
 )
 
@@ -117,6 +120,8 @@ fun DocumentSnapshot.toMedicationLog(): MedicationLog? {
         takenAt = takenAt,
         note = str("note"),
         createdAt = date("createdAt"),
+        source = MedicationSource.fromKey(getString("source")),
+        suggestionId = str("suggestionId"),
     )
 }
 

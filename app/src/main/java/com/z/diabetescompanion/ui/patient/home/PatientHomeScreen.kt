@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Medication
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -46,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -55,6 +57,7 @@ import com.z.diabetescompanion.domain.GlucoseStatus
 import com.z.diabetescompanion.domain.Trend
 import com.z.diabetescompanion.domain.formatGlucose
 import com.z.diabetescompanion.ui.common.Format
+import com.z.diabetescompanion.ui.components.AlertListItem
 import com.z.diabetescompanion.ui.components.ErrorState
 import com.z.diabetescompanion.ui.components.GlucoseChart
 import com.z.diabetescompanion.ui.components.LinkButton
@@ -82,26 +85,44 @@ fun PatientHomeScreen(
     onOpenReminders: () -> Unit,
     onAskDoctor: () -> Unit,
     onOpenChatbot: () -> Unit,
+    onOpenAlert: (String) -> Unit,
 ) {
     val session = currentSession()
     val viewModel: PatientHomeViewModel = viewModel {
         val c = container()
-        PatientHomeViewModel(session.uid, c.glucoseRepository, c.thresholdRepository, c.reminderRepository)
+        PatientHomeViewModel(
+            session.uid, c.glucoseRepository, c.thresholdRepository,
+            c.reminderRepository, c.alertRepository,
+        )
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    ScreenScaffold(title = "Home") { padding ->
+    ScreenScaffold(
+        title = "Home",
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = onOpenChatbot,
+                icon = { Icon(Icons.AutoMirrored.Rounded.Chat, contentDescription = null) },
+                text = { Text("Chatbot") },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            )
+        },
+    ) { padding ->
         when {
             state.isLoading -> LoadingState(modifier = Modifier.padding(padding))
             state.error != null -> ErrorState(message = state.error!!, modifier = Modifier.padding(padding))
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 32.dp),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 item { Greeting(name = session.profile.firstName) }
+                if (state.activeAlerts.isNotEmpty()) {
+                    item { ActiveAlertsSection(state.activeAlerts, onOpenAlert) }
+                }
                 item { LatestReadingCard(state = state, onClick = onOpenHistory, onAdd = onAddGlucose) }
-                item { QuickActions(onAddGlucose, onLogMedication, onAskDoctor, onOpenChatbot) }
+                item { QuickActions(onAddGlucose, onLogMedication, onAskDoctor) }
                 item { RemindersCard(state = state, onOpenReminders = onOpenReminders) }
                 item { PrototypeNotice() }
             }
@@ -129,6 +150,20 @@ private fun Greeting(name: String) {
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
+    }
+}
+
+/** Active alerts sit directly under the greeting so they cannot be missed (FR-11). */
+@Composable
+private fun ActiveAlertsSection(alerts: List<com.z.diabetescompanion.data.model.Alert>, onOpenAlert: (String) -> Unit) {
+    Column {
+        SectionHeader("Needs your response")
+        Spacer(Modifier.height(10.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            alerts.forEach { alert ->
+                AlertListItem(alert = alert, onClick = { onOpenAlert(alert.id) })
+            }
+        }
     }
 }
 
@@ -230,36 +265,31 @@ private fun QuickActions(
     onAddGlucose: () -> Unit,
     onLogMedication: () -> Unit,
     onAskDoctor: () -> Unit,
-    onOpenChatbot: () -> Unit,
 ) {
+    // Three tiles across: the chatbot moved to the floating action button.
     val actions = listOf(
-        QuickAction("Add glucose", Icons.Rounded.Bloodtype, accent = true, onClick = onAddGlucose),
-        QuickAction("Log medication", Icons.Rounded.Medication, accent = false, onClick = onLogMedication),
-        QuickAction("Ask the doctor about your insulin dose", Icons.Rounded.MedicalServices, accent = false, onClick = onAskDoctor),
-        QuickAction("Open chatbot", Icons.AutoMirrored.Rounded.Chat, accent = true, onClick = onOpenChatbot),
+        QuickAction("Glucose", Icons.Rounded.Bloodtype, accent = true, onClick = onAddGlucose),
+        QuickAction("Medication", Icons.Rounded.Medication, accent = false, onClick = onLogMedication),
+        QuickAction("Ask doctor", Icons.Rounded.MedicalServices, accent = true, onClick = onAskDoctor),
     )
     Column {
         SectionHeader("Quick actions")
         Spacer(Modifier.height(12.dp))
-        actions.chunked(2).forEachIndexed { index, row ->
-            if (index > 0) Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { action -> QuickActionTile(action, Modifier.weight(1f)) }
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            actions.forEach { action -> QuickActionTile(action, Modifier.weight(1f)) }
         }
     }
 }
 
 @Composable
 private fun QuickActionTile(action: QuickAction, modifier: Modifier = Modifier) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surface)
             .clickable(onClick = action.onClick)
-            .padding(14.dp)
-            .height(52.dp),
+            .padding(vertical = 16.dp, horizontal = 8.dp),
     ) {
         val container = if (action.accent) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer
         val content = if (action.accent) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onPrimaryContainer
@@ -271,12 +301,13 @@ private fun QuickActionTile(action: QuickAction, modifier: Modifier = Modifier) 
         ) {
             Icon(action.icon, contentDescription = null, tint = content)
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.height(10.dp))
         Text(
             action.label,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 3,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
     }

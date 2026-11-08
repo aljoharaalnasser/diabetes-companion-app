@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Diabetes Companion - Sprint 1 access rules (NFR-07).
+// Diabetes Companion - access rules (NFR-07).
 // Deploy with: firebase deploy --only firestore:rules
 // or paste into Firebase console > Firestore Database > Rules > Publish.
 service cloud.firestore {
@@ -22,10 +22,21 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/careLinks/$(linkId)).data.status == 'active';
     }
 
-    function isLinkedDoctor(patientUid) {
+    function linkedRole(patientUid) {
       let linkId = patientUid + '_' + request.auth.uid;
-      return hasActiveLink(patientUid)
-        && get(/databases/$(database)/documents/careLinks/$(linkId)).data.memberRole == 'doctor';
+      return get(/databases/$(database)/documents/careLinks/$(linkId)).data.memberRole;
+    }
+
+    function isLinkedDoctor(patientUid) {
+      return hasActiveLink(patientUid) && linkedRole(patientUid) == 'doctor';
+    }
+
+    // isLinkedDoctor() trusts the memberRole on the patient-written care link. For the meal
+    // insulin calculator, confirming an ICR additionally needs the caller's own profile to be
+    // a doctor, so a patient can't link a second non-doctor account to confirm their own ratio.
+    function isVerifiedLinkedDoctor(patientUid) {
+      return isLinkedDoctor(patientUid)
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'doctor';
     }
 
     function validRole(role) {
@@ -64,24 +75,169 @@ service cloud.firestore {
           && request.resource.data.targetLow < request.resource.data.targetHigh
           && request.resource.data.targetHigh < request.resource.data.criticalHigh;
       }
+
+      // ---- Meal insulin calculator: ICR versions --------------------------
+      // Append-only: no version is ever updated or deleted, so every past dose suggestion
+      // stays traceable to the exact ratio it used. Patient and linked doctor can read.
+      // Bounds must match MealInsulinConfig.ICR_MIN/MAX_GRAMS_PER_UNIT
+      // (TODO: range to be confirmed with supervisor).
+      match /icrSettings/{icrId} {
+        function validIcr() {
+          let d = request.resource.data;
+          return d.icrId == icrId
+            && d.patientId == uid
+            && d.gramsPerUnit is number
+            && d.gramsPerUnit >= 1 && d.gramsPerUnit <= 100
+            && d.version is int && d.version >= 1
+            && d.status in ['UNCONFIRMED', 'CONFIRMED']
+            && d.enteredBy in ['PATIENT', 'DOCTOR'];
+        }
+
+        allow read: if isSelf(uid) || isLinkedDoctor(uid);
+        // The patient may only ever add an UNCONFIRMED value they entered themselves.
+        // Only the linked doctor may add a CONFIRMED version (a new value, or a confirmation
+        // of a patient value), and it must carry the doctor's own uid.
+        allow create: if validIcr()
+          && ((isSelf(uid)
+                && request.resource.data.status == 'UNCONFIRMED'
+                && request.resource.data.enteredBy == 'PATIENT'
+                && request.resource.data.confirmedByDoctorId == '')
+              || (isVerifiedLinkedDoctor(uid)
+                && request.resource.data.status == 'CONFIRMED'
+                && request.resource.data.confirmedByDoctorId == request.auth.uid));
+        allow update, delete: if false;
+      }
+
+      // ---- Meal insulin calculator: dose suggestions ----------------------
+      // The patient creates and resolves their own; the linked doctor can read them.
+      match /doseSuggestions/{suggestionId} {
+        function icrDoc() {
+          return /databases/$(database)/documents/users/$(uid)/icrSettings/$(request.resource.data.icrId);
+        }
+
+        allow read: if isSelf(uid) || isLinkedDoctor(uid);
+        // Created only as SUGGESTED, from a CONFIRMED ICR whose value matches what is stored,
+        // and with the suggested units matching floor(carbs / ICR / step) * step.
+        allow create: if isSelf(uid)
+          && request.resource.data.suggestionId == suggestionId
+          && request.resource.data.patientId == uid
+          && request.resource.data.status == 'SUGGESTED'
+          && request.resource.data.takenUnits == null
+          && request.resource.data.confirmedCarbs is number
+          && request.resource.data.confirmedCarbs > 0
+          && request.resource.data.roundingStep is number
+          && request.resource.data.roundingStep > 0
+          && exists(icrDoc())
+          && get(icrDoc()).data.status == 'CONFIRMED'
+          && get(icrDoc()).data.gramsPerUnit == request.resource.data.icrValue
+          && get(icrDoc()).data.version == request.resource.data.icrVersion
+          && math.abs(
+               math.floor(request.resource.data.confirmedCarbs / request.resource.data.icrValue
+                          / request.resource.data.roundingStep + 0.000001)
+                 * request.resource.data.roundingStep
+               - request.resource.data.suggestedUnits) < 0.0001;
+        // Resolved once, from SUGGESTED to TAKEN or SKIPPED. The calculated values can't change.
+        allow update: if isSelf(uid)
+          && resource.data.status == 'SUGGESTED'
+          && request.resource.data.status in ['TAKEN', 'SKIPPED']
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'takenUnits', 'medicationLogId', 'updatedAt'])
+          && (request.resource.data.status == 'SKIPPED'
+              || (request.resource.data.takenUnits is number && request.resource.data.takenUnits > 0));
+        allow delete: if false;
+      }
+
+      // ---- Alerts (FR-08, FR-09, FR-10) ---------------------------------
+      // The patient raises and answers their own alerts. A linked caregiver or doctor may
+      // read them and record follow-up, but may not rewrite the reading they describe.
+      match /alerts/{id} {
+        allow read: if isSelf(uid) || hasActiveLink(uid);
+        allow create: if isSelf(uid);
+        allow delete: if false;
+        allow update: if isSelf(uid)
+          || (hasActiveLink(uid)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                   'stage', 'events',
+                   'caregiverNotifiedAt', 'doctorNotifiedAt',
+                   'resolvedByUid', 'resolvedByName', 'resolvedByRole',
+                   'resolutionNote', 'resolvedAt'
+                 ]));
+      }
     }
 
     // ---- Consent links ---------------------------------------------------
     match /careLinks/{linkId} {
+      // The patient, the member on the link, and anyone else already on that patient's
+      // care team, so a caregiver can find the assigned doctor to contact (FR-13).
       allow read: if signedIn()
         && (resource.data.patientUid == request.auth.uid
-            || resource.data.memberUid == request.auth.uid);
+            || resource.data.memberUid == request.auth.uid
+            || hasActiveLink(resource.data.patientUid));
       // Only the patient can grant, and the id must be patientUid_memberUid.
       allow create: if signedIn()
         && request.resource.data.patientUid == request.auth.uid
         && linkId == request.auth.uid + '_' + request.resource.data.memberUid
         && request.resource.data.memberRole in ['doctor', 'caregiver']
         && request.resource.data.status == 'active';
-      // Only the patient can revoke; nothing else about the link may change.
+      // Only the patient can revoke or re-grant. Who the link is between can never change,
+      // so the identity fields must match the stored ones exactly.
       allow update: if signedIn()
         && resource.data.patientUid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'revokedAt']);
+        && request.resource.data.patientUid == resource.data.patientUid
+        && request.resource.data.memberUid == resource.data.memberUid
+        && request.resource.data.memberRole == resource.data.memberRole
+        && request.resource.data.status in ['active', 'revoked'];
       allow delete: if false;
+    }
+
+    // ---- Care-team messaging (FR-15) -------------------------------------
+    match /conversations/{conversationId} {
+      function isParticipant() {
+        return signedIn() && request.auth.uid in resource.data.participants;
+      }
+
+      allow read, update: if isParticipant();
+      allow create: if signedIn()
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.participants.size() == 2;
+      allow delete: if false;
+
+      // Messages are append-only: nobody may edit or delete what was said.
+      match /messages/{messageId} {
+        function conversationParticipants() {
+          return get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+        }
+        allow read: if signedIn() && request.auth.uid in conversationParticipants();
+        allow create: if signedIn()
+          && request.auth.uid in conversationParticipants()
+          && request.resource.data.senderUid == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // ---- Insulin-advice requests (FR-17, FR-18, FR-19) -------------------
+    match /insulinRequests/{requestId} {
+      allow read: if signedIn()
+        && (resource.data.patientUid == request.auth.uid
+            || resource.data.doctorUid == request.auth.uid);
+      // Only the patient raises a request, and only ever as pending.
+      allow create: if signedIn()
+        && request.resource.data.patientUid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.response == null;
+      // Only the assigned doctor answers it, and the patient link cannot be rewritten.
+      allow update: if signedIn()
+        && resource.data.doctorUid == request.auth.uid
+        && request.resource.data.patientUid == resource.data.patientUid
+        && request.resource.data.doctorUid == resource.data.doctorUid;
+      allow delete: if false;
+
+      // The AI draft is doctor-only. The patient is denied here, so an unreviewed draft
+      // can never reach them even if the client asked for it (FR-18).
+      match /private/{document} {
+        allow read, write: if signedIn()
+          && get(/databases/$(database)/documents/insulinRequests/$(requestId)).data.doctorUid == request.auth.uid;
+      }
     }
 
     // ---- Deletion requests (NFR-10) -------------------------------------

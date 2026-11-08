@@ -83,6 +83,16 @@ enum class MedicationKind(val label: String, val storageKey: String) {
     }
 }
 
+/** Where a medication log entry came from. Records written before this field read as [Manual]. */
+enum class MedicationSource(val label: String, val storageKey: String) {
+    Manual("Manual entry", "MANUAL"),
+    CalculatorSuggestion("Meal insulin calculator", "CALCULATOR_SUGGESTION");
+
+    companion object {
+        fun fromKey(key: String?): MedicationSource = entries.firstOrNull { it.storageKey == key } ?: Manual
+    }
+}
+
 data class MedicationLog(
     val id: String,
     val name: String,
@@ -92,6 +102,9 @@ data class MedicationLog(
     val takenAt: Date,
     val note: String = "",
     val createdAt: Date? = null,
+    val source: MedicationSource = MedicationSource.Manual,
+    /** Links a [MedicationSource.CalculatorSuggestion] entry to its DoseSuggestion. */
+    val suggestionId: String = "",
 )
 
 data class Reminder(

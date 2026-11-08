@@ -3,6 +3,7 @@ package com.z.diabetescompanion.ui.navigation
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.z.diabetescompanion.data.alerts.AlertEscalationScheduler
 import com.z.diabetescompanion.data.auth.AccountService
 import com.z.diabetescompanion.data.auth.AuthRepository
 import com.z.diabetescompanion.data.auth.AuthUser
@@ -10,6 +11,7 @@ import com.z.diabetescompanion.data.firestore.toFirestoreMessage
 import com.z.diabetescompanion.data.model.UserProfile
 import com.z.diabetescompanion.data.prefs.UserPreferences
 import com.z.diabetescompanion.data.prefs.UserPreferencesRepository
+import com.z.diabetescompanion.data.repository.AlertRepository
 import com.z.diabetescompanion.data.repository.ReminderRepository
 import com.z.diabetescompanion.data.repository.UserRepository
 import com.z.diabetescompanion.data.reminders.ReminderScheduler
@@ -46,6 +48,8 @@ class RootViewModel(
     private val accountService: AccountService,
     private val reminderRepository: ReminderRepository,
     private val reminderScheduler: ReminderScheduler,
+    private val alertRepository: AlertRepository,
+    private val alertEscalationScheduler: AlertEscalationScheduler,
 ) : ViewModel() {
 
     val isSignedInAtLaunch: Boolean = authRepository.currentUser != null
@@ -123,6 +127,18 @@ class RootViewModel(
                 .collect { pair ->
                     if (pair != null) reminderScheduler.syncAll(pair.first, pair.second)
                 }
+        }
+
+        // Alarms do not survive a process death, so re-arm the escalation timers for any
+        // alert that is still waiting on one (FR-09).
+        viewModelScope.launch {
+            authRepository.authState
+                .flatMapLatest { user ->
+                    if (user == null) flowOf(emptyList())
+                    else alertRepository.alertsForPatient(user.uid, limit = 30)
+                        .catch { emit(emptyList()) }
+                }
+                .collect { alerts -> alertEscalationScheduler.syncAll(alerts) }
         }
     }
 

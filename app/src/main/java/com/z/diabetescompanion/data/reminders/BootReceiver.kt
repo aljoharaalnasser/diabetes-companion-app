@@ -24,6 +24,9 @@ class BootReceiver : BroadcastReceiver() {
                 val prefs = app.container.preferencesRepository.preferences.first()
                 val reminders = app.container.reminderRepository.listOnce(uid)
                 app.container.reminderScheduler.syncAll(reminders, prefs.notificationsEnabled)
+                // Escalation timers are alarms too, so they need re-arming after a reboot.
+                val alerts = app.container.alertRepository.alertsForPatient(uid, limit = 30).first()
+                app.container.alertEscalationScheduler.syncAll(alerts)
             } catch (e: Exception) {
                 Log.w("BootReceiver", "Failed to restore reminders", e)
             } finally {

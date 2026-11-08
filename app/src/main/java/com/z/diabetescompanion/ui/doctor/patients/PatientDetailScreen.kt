@@ -44,6 +44,7 @@ import com.z.diabetescompanion.ui.components.GlucoseChart
 import com.z.diabetescompanion.ui.components.LinkButton
 import com.z.diabetescompanion.ui.components.LoadingState
 import com.z.diabetescompanion.ui.components.ScreenScaffold
+import com.z.diabetescompanion.ui.components.SecondaryButton
 import com.z.diabetescompanion.ui.components.SectionHeader
 import com.z.diabetescompanion.ui.components.StatusChip
 import com.z.diabetescompanion.ui.components.TrendLabel
@@ -102,12 +103,15 @@ fun PatientDetailScreen(
     onOpenHistory: () -> Unit,
     onOpenMedications: () -> Unit,
     onOpenThresholds: () -> Unit,
+    onOpenSummary: () -> Unit,
+    onMessagePatient: (String) -> Unit,
 ) {
     val viewModel: PatientDetailViewModel = viewModel(key = "patient_$patientUid") {
         val c = container()
         PatientDetailViewModel(patientUid, c.userRepository, c.glucoseRepository, c.medicationRepository, c.thresholdRepository)
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val mealInsulin = rememberPatientMealInsulinState(patientUid)
 
     ScreenScaffold(title = state.profile?.displayName ?: "Patient", onBack = onBack) { padding ->
         when {
@@ -123,9 +127,18 @@ fun PatientDetailScreen(
             ) {
                 item { LatestCard(state) }
                 item { ThresholdsCard(state.thresholds, onOpenThresholds) }
+                item { DetailCard { IcrSummaryContent(mealInsulin, onOpenThresholds) } }
                 item { GlucoseCard(state, onOpenHistory) }
                 item { MedicationCard(state, onOpenMedications) }
+                item { DetailCard { MealInsulinSuggestionsContent(mealInsulin) } }
+                item { SummaryCard(onOpenSummary) }
                 item { ProfileCard(state.profile) }
+                item {
+                    SecondaryButton(
+                        text = "Message this patient",
+                        onClick = { onMessagePatient(state.profile?.displayName.orEmpty()) },
+                    )
+                }
             }
         }
     }
@@ -238,6 +251,24 @@ private fun MedicationCard(state: PatientDetailUiState, onOpen: () -> Unit) {
                     Text(Format.dateTime(log.takenAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+        }
+    }
+}
+
+/** Weekly summaries are shared with the authorised doctor (FR-20). */
+@Composable
+private fun SummaryCard(onOpen: () -> Unit) {
+    DetailCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Weekly summary", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Glucose and medication overview by week.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            LinkButton(text = "Open", onClick = onOpen)
         }
     }
 }

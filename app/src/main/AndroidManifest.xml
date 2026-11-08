@@ -36,6 +36,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".data.alerts.AlertEscalationReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".data.reminders.BootReceiver"
             android:enabled="true"
             android:exported="true">

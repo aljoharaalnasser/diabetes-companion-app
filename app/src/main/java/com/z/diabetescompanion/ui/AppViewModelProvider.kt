@@ -22,6 +22,8 @@ object AppViewModelProvider {
                 accountService = c.accountService,
                 reminderRepository = c.reminderRepository,
                 reminderScheduler = c.reminderScheduler,
+                alertRepository = c.alertRepository,
+                alertEscalationScheduler = c.alertEscalationScheduler,
             )
         }
         initializer { LoginViewModel(container().authRepository, container().accountService) }

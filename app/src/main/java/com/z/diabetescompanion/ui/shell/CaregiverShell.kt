@@ -9,8 +9,23 @@ import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.composable
-import com.z.diabetescompanion.ui.common.PlaceholderScreen
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.z.diabetescompanion.ui.alerts.AlertDetailScreen
+import com.z.diabetescompanion.ui.alerts.CareTeamAlertsScreen
+import com.z.diabetescompanion.ui.caregiver.CaregiverHomeScreen
+import com.z.diabetescompanion.ui.container
+import com.z.diabetescompanion.ui.currentSession
+import com.z.diabetescompanion.ui.messages.ChatScreen
+import com.z.diabetescompanion.ui.messages.ConversationLauncher
+import com.z.diabetescompanion.ui.messages.ConversationNavViewModel
+import com.z.diabetescompanion.ui.messages.ConversationsScreen
 import com.z.diabetescompanion.ui.patient.profile.ProfileScreen
 import com.z.diabetescompanion.ui.settings.PrivacyScreen
 import com.z.diabetescompanion.ui.settings.SettingsScreen
@@ -20,12 +35,17 @@ private object C {
     const val ALERTS = "caregiver/alerts"
     const val MESSAGES = "caregiver/messages"
     const val MORE = "caregiver/more"
+    const val ALERT = "caregiver/alert/{patientUid}/{alertId}"
+    const val CHAT = "caregiver/chat/{conversationId}"
     const val PROFILE = "caregiver/profile"
     const val SETTINGS = "caregiver/settings"
     const val PRIVACY = "caregiver/privacy"
+
+    fun alert(patientUid: String, alertId: String) = "caregiver/alert/$patientUid/$alertId"
+    fun chat(conversationId: String) = "caregiver/chat/$conversationId"
 }
 
-/** Caregiver navigation: Home, Alerts, Messages, More. Feature screens land in Sprint 2 (S2-02). */
+/** Caregiver navigation per the design brief: Home, Alerts, Messages, More (FR-13). */
 @Composable
 fun CaregiverShell() {
     val tabs = listOf(
@@ -34,15 +54,37 @@ fun CaregiverShell() {
         ShellTab(C.MESSAGES, "Messages", Icons.AutoMirrored.Rounded.Chat),
         ShellTab(C.MORE, "More", Icons.Rounded.MoreHoriz),
     )
-    RoleShell(tabs = tabs, startRoute = C.HOME) { nav ->
+    val session = currentSession()
+    val navController = rememberNavController()
+
+    val conversationNav: ConversationNavViewModel = viewModel {
+        val c = container()
+        ConversationNavViewModel(ConversationLauncher(c.careLinkRepository, c.messageRepository))
+    }
+    val chatDestination by conversationNav.destination.collectAsStateWithLifecycle()
+    LaunchedEffect(chatDestination) {
+        chatDestination?.let {
+            navController.navigate(C.chat(it))
+            conversationNav.consumeDestination()
+        }
+    }
+
+    RoleShell(tabs = tabs, startRoute = C.HOME, navController = navController) { nav ->
         composable(C.HOME) {
-            PlaceholderScreen("Linked patient", "Current glucose status and medication history for the patient who granted you access.", sprint = 2, icon = Icons.Rounded.Home)
+            CaregiverHomeScreen(
+                onOpenAlert = { patientUid, alertId -> nav.navigate(C.alert(patientUid, alertId)) },
+                onMessageDoctor = { linked ->
+                    conversationNav.openAsCaregiver(
+                        session.profile, linked.link.patientUid, linked.link.patientName,
+                    )
+                },
+            )
         }
         composable(C.ALERTS) {
-            PlaceholderScreen("Alerts", "Escalated alerts with Acknowledge, Contact Doctor and Record Resolution actions.", sprint = 2, icon = Icons.Rounded.NotificationsActive)
+            CareTeamAlertsScreen(onOpenAlert = { patientUid, alertId -> nav.navigate(C.alert(patientUid, alertId)) })
         }
         composable(C.MESSAGES) {
-            PlaceholderScreen("Messages", "Conversation with the assigned doctor.", sprint = 2, icon = Icons.AutoMirrored.Rounded.Chat)
+            ConversationsScreen(onOpenConversation = { nav.navigate(C.chat(it)) })
         }
         composable(C.MORE) {
             MoreScreen(
@@ -53,6 +95,32 @@ fun CaregiverShell() {
                 )
             )
         }
+
+        composable(
+            C.ALERT,
+            arguments = listOf(
+                navArgument("patientUid") { type = NavType.StringType },
+                navArgument("alertId") { type = NavType.StringType },
+            ),
+        ) { entry ->
+            val patientUid = entry.arguments?.getString("patientUid").orEmpty()
+            AlertDetailScreen(
+                patientUid = patientUid,
+                alertId = entry.arguments?.getString("alertId").orEmpty(),
+                onBack = { nav.popBackStack() },
+                onContactDoctor = {},
+                onMessagePatient = {
+                    conversationNav.openAsCaregiver(session.profile, patientUid, "")
+                },
+            )
+        }
+        composable(C.CHAT, arguments = listOf(navArgument("conversationId") { type = NavType.StringType })) { entry ->
+            ChatScreen(
+                conversationId = entry.arguments?.getString("conversationId").orEmpty(),
+                onBack = { nav.popBackStack() },
+            )
+        }
+
         composable(C.PROFILE) { ProfileScreen(onBack = { nav.popBackStack() }) }
         composable(C.SETTINGS) { SettingsScreen(onBack = { nav.popBackStack() }, onOpenPrivacy = { nav.navigate(C.PRIVACY) }) }
         composable(C.PRIVACY) { PrivacyScreen(onBack = { nav.popBackStack() }, onOpenSharing = null) }
