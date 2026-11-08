@@ -23,7 +23,7 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 val prefs = app.container.preferencesRepository.preferences.first()
                 val reminders = app.container.reminderRepository.listOnce(uid)
-                app.container.reminderScheduler.syncAll(reminders, prefs.notificationsEnabled)
+                app.container.reminderScheduler.syncAll(reminders, prefs.remindersAllowed)
                 // Escalation timers are alarms too, so they need re-arming after a reboot.
                 val alerts = app.container.alertRepository.alertsForPatient(uid, limit = 30).first()
                 app.container.alertEscalationScheduler.syncAll(alerts)

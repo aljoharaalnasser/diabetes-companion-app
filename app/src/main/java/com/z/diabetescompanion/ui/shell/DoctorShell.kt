@@ -104,7 +104,7 @@ fun DoctorShell() {
             MoreScreen(
                 items = listOf(
                     MoreItem("Profile", "Your name as patients see it.", Icons.Rounded.PersonOutline) { nav.navigate(D.PROFILE) },
-                    MoreItem("Settings", "Text size and notifications.", Icons.Rounded.Settings) { nav.navigate(D.SETTINGS) },
+                    MoreItem("Settings", "Appearance, text size and notifications.", Icons.Rounded.Settings) { nav.navigate(D.SETTINGS) },
                     MoreItem("Privacy", "How patient data is protected.", Icons.Rounded.Shield) { nav.navigate(D.PRIVACY) },
                 )
             )

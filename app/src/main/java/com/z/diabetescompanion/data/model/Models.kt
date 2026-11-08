@@ -18,6 +18,21 @@ enum class UserRole(val label: String, val storageKey: String) {
     }
 }
 
+/**
+ * Whether an administrator has suspended the account (FR-14).
+ *
+ * Checked when the session starts, so a suspended user cannot sign in and an open session
+ * ends at the next profile update. The rules stop an account from un-suspending itself.
+ */
+enum class AccountStatus(val label: String, val storageKey: String) {
+    Active("Active", "active"),
+    Suspended("Suspended", "suspended");
+
+    companion object {
+        fun fromKey(key: String?): AccountStatus = entries.firstOrNull { it.storageKey == key } ?: Active
+    }
+}
+
 data class UserProfile(
     val uid: String,
     val role: UserRole,
@@ -28,9 +43,12 @@ data class UserProfile(
     val diabetesType: String = "",
     val relevantHistory: String = "",
     val carePlan: String = "",
+    val accountStatus: AccountStatus = AccountStatus.Active,
     val createdAt: Date? = null,
     val updatedAt: Date? = null,
 ) {
+    val isSuspended: Boolean get() = accountStatus == AccountStatus.Suspended
+
     val initials: String
         get() = displayName.split(' ').filter { it.isNotBlank() }.take(2)
             .joinToString("") { it.first().uppercaseChar().toString() }.ifEmpty { "?" }
@@ -161,5 +179,15 @@ data class DeletionRequest(
     val id: String,
     val uid: String,
     val requestedAt: Date? = null,
-    val status: String = "pending",
-)
+    val status: String = PENDING,
+    /** Set when an administrator marks the request done, as the NFR-10 evidence. */
+    val completedAt: Date? = null,
+    val completedByName: String = "",
+) {
+    val isPending: Boolean get() = status == PENDING
+
+    companion object {
+        const val PENDING = "pending"
+        const val COMPLETED = "completed"
+    }
+}

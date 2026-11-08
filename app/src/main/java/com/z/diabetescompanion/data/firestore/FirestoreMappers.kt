@@ -3,6 +3,7 @@ package com.z.diabetescompanion.data.firestore
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
+import com.z.diabetescompanion.data.model.AccountStatus
 import com.z.diabetescompanion.data.model.CareLink
 import com.z.diabetescompanion.data.model.CareLinkStatus
 import com.z.diabetescompanion.data.model.DeletionRequest
@@ -48,7 +49,12 @@ fun UserProfile.toMap(isNew: Boolean): Map<String, Any?> = buildMap {
     put("relevantHistory", relevantHistory)
     put("carePlan", carePlan)
     put("updatedAt", FieldValue.serverTimestamp())
-    if (isNew) put("createdAt", FieldValue.serverTimestamp())
+    if (isNew) {
+        put("createdAt", FieldValue.serverTimestamp())
+        // Written only at creation. Leaving it out of updates is what makes the rules'
+        // "an account cannot change its own status" check hold on a merge write.
+        put("accountStatus", AccountStatus.Active.storageKey)
+    }
 }
 
 fun DocumentSnapshot.toUserProfile(): UserProfile? {
@@ -63,6 +69,7 @@ fun DocumentSnapshot.toUserProfile(): UserProfile? {
         diabetesType = str("diabetesType"),
         relevantHistory = str("relevantHistory"),
         carePlan = str("carePlan"),
+        accountStatus = AccountStatus.fromKey(getString("accountStatus")),
         createdAt = date("createdAt"),
         updatedAt = date("updatedAt"),
     )
@@ -211,6 +218,8 @@ fun DocumentSnapshot.toDeletionRequest(): DeletionRequest? {
         id = id,
         uid = str("uid"),
         requestedAt = date("requestedAt"),
-        status = str("status").ifEmpty { "pending" },
+        status = str("status").ifEmpty { DeletionRequest.PENDING },
+        completedAt = date("completedAt"),
+        completedByName = str("completedByName"),
     )
 }

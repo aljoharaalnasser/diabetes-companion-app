@@ -98,6 +98,9 @@ class RootViewModel(
                     load is ProfileLoad.Error -> SessionState.Failed(load.message)
                     load is ProfileLoad.Loading -> SessionState.Loading
                     load is ProfileLoad.Loaded && load.profile == null -> SessionState.NeedsProfile(user)
+                    // Suspended: hold still while the init block below signs the user out,
+                    // so the role shell never appears for an account that may not use it.
+                    load is ProfileLoad.Loaded && load.profile?.isSuspended == true -> SessionState.Loading
                     load is ProfileLoad.Loaded -> SessionState.Ready(
                         Session(
                             profile = load.profile!!,
@@ -116,12 +119,31 @@ class RootViewModel(
             )
 
     init {
+        // An administrator can suspend an account that is already signed in (FR-14). The
+        // live profile shows it, so end the session instead of leaving it running. The
+        // combine above holds on Loading meanwhile, so no role shell appears in between.
+        viewModelScope.launch {
+            authRepository.authState
+                .flatMapLatest { user ->
+                    if (user == null) flowOf(null)
+                    // Server-confirmed only: a cached 'suspended' would end the session of
+                    // an account an administrator has since reactivated.
+                    else userRepository.serverProfile(user.uid).catch { emit(null) }
+                }
+                .collect { profile ->
+                    if (profile?.isSuspended == true) {
+                        Log.i(TAG, "Account suspended while signed in - ending the session")
+                        accountService.signOutSuspended()
+                    }
+                }
+        }
+
         // Keep reminder alarms in sync with the signed-in patient's saved schedule (FR-07).
         viewModelScope.launch {
             authRepository.authState
                 .flatMapLatest { user ->
                     if (user == null) flowOf(null)
-                    else combine(reminderRepository.reminders(user.uid), preferences) { r, p -> r to p.notificationsEnabled }
+                    else combine(reminderRepository.reminders(user.uid), preferences) { r, p -> r to p.remindersAllowed }
                         .catch { /* permissions or offline: alarms stay as they were */ }
                 }
                 .collect { pair ->

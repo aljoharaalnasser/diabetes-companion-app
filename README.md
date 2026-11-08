@@ -1,143 +1,121 @@
-# Diabetes Companion
+# Diabetes Companion - Sprint 3 Application
 
-Kotlin + Jetpack Compose Android app for the SE 499 Diabetes Companion project.
-This build covers **Sprint 1 and Sprint 2** of the project charter,
-following the Figma design brief's structure (welcome + disclaimer, role-specific bottom
-navigation, demo role switcher, patient records, doctor thresholds, consent controls).
+This package contains the Android application source and a debug APK for demonstration.
 
-## Stack
+## Install the included APK
 
-| Concern | Choice |
-|---|---|
-| UI | Jetpack Compose, Material 3, brand theme from the logo (blue primary, red accent; light + dark), text-size setting |
-| Navigation | Navigation Compose: `auth` graph, then one bottom-nav shell per role |
-| State | `ViewModel` + `StateFlow`, unidirectional data flow |
-| Auth | Firebase Authentication (email/password) |
-| Data | Cloud Firestore with live snapshot flows; rules in `firestore.rules` |
-| Reminders | AlarmManager + BroadcastReceiver, restored after reboot |
-| Prefs | DataStore (text size, notifications, demo role) |
-| DI | Hand-rolled `AppContainer` |
-| AI | OpenAI `gpt-6-luna` via Chat Completions, behind an `AiClient` interface |
-| Alerts | AlarmManager escalation timers + Firestore alert state |
-| Min SDK | 24 |
+1. Extract the ZIP.
+2. Copy `APK/DiabetesCompanion-Sprint3-Demo.apk` to an Android phone running Android 7.0 or newer.
+3. Open the APK on the phone and allow installation from that source when Android asks.
+4. Open Diabetes Companion and create an account or sign in with an authorized account.
+
+For installation with Android platform tools, use:
+```sh
+adb install -r -t APK/DiabetesCompanion-Sprint3-Demo.apk
+```
+
+The APK connects to the existing Firebase project, `diabetes-companion-cace7`.
+It contains no private OpenAI key. AI features need a key added to the source project and a new build; the app provides its available manual paths and configuration feedback.
+
+## Open and build the source
+
+This folder is the Android Studio project root; it contains `settings.gradle.kts`.
+
+1. In Android Studio, choose **Open** and select this folder.
+2. Let Gradle sync. Use Android Studio's bundled Gradle JDK and install Android SDK 36 if prompted.
+3. The included `app/google-services.json` is the Firebase Android client configuration for this project. Keep it for the existing environment, or replace it with your own Firebase project's configuration for package `com.z.diabetescompanion`.
+4. Copy `.env.example` to `.env`. Add your own OpenAI key:
+   ```properties
+   OPENAI_API_KEY=your_own_key
+   OPENAI_MODEL=gpt-6-luna
+   ```
+5. Run the **app** configuration from Android Studio, or build with the included wrapper:
+   ```sh
+   ./gradlew :app:assembleDebug
+   ```
+   On Windows, use `gradlew.bat :app:assembleDebug`.
+
+The new APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
+Rebuild whenever you change the OpenAI configuration. The project currently embeds that value in the APK, so distribute only builds using a key you are authorized to share.
+
+If macOS/Linux reports that the wrapper is not executable, run `chmod +x gradlew` first.
 
 ## Firebase setup
 
-1. Firebase console > add Android app `com.z.diabetescompanion`, download `google-services.json` into `app/`.
-2. **Authentication > Sign-in method**: enable Email/Password.
-3. **Firestore Database > Create database** (production mode, any region).
-4. **Firestore > Rules**: paste `firestore.rules` and publish. The rules enforce the charter's
-   role and consent model server-side (NFR-07): patients own their records, linked doctors and
-   caregivers read them, only a linked doctor can write thresholds, only the patient can grant
-   or revoke a link.
+For the existing environment, Firebase Authentication and Firestore are already configured.
+For your own environment:
 
-The Google Services plugin is applied only when `google-services.json` exists, so the project
-compiles without it; auth screens then show a "not configured" banner.
+- Register the Android app and download its `google-services.json`.
+- Enable Email/Password sign-in in Firebase Authentication.
+- Create a Cloud Firestore database.
+- Publish the included `firestore.rules` to that database.
+- Deploy `firestore.indexes.json` as well. It adds collection-group scope to the single-field
+  index on `alerts.recordedAt`, which the admin dashboard's cross-patient alert query needs.
+  Without it that one query fails and the Alerts tab says so instead of showing an empty list.
+  ```sh
+  firebase deploy --only firestore:rules,firestore:indexes
+  ```
+  The index takes a few minutes to build before the query starts returning rows.
+- The included `.firebaserc` selects the existing project. Change it before using Firebase CLI commands with another project.
 
-## AI setup
+### Creating the first administrator
 
-Copy `.env.example` to `.env` at the repo root and paste your key:
+The rules deliberately refuse to let an account register itself as an admin, so the first one
+is promoted by hand: open Firestore in the Firebase console and set `role` to `admin` on that
+user's document in `users`. After that, an existing administrator can change any other
+account's role from the Users tab. An administrator cannot change their own role or suspend
+themselves, which is what stops the platform being locked out.
 
-```
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-6-luna   # optional, this is the default
-```
+No Firebase password, service-account credential, OpenAI key or test-account password is included.
 
-`.env` is git-ignored. Gradle reads it into `BuildConfig` at build time, so **rebuild after
-changing it**. Without a key the app still runs: every AI surface explains that it needs one
-and offers the manual path instead (the doctor writes their own reply, the summary shows its
-figures without a narrative).
+## What is included
 
-Only de-identified clinical values are sent to OpenAI: no names, emails or user ids (NFR-09).
-The key ships inside the APK, which is acceptable for an academic prototype but would need a
-server-side proxy before any real deployment.
+- `app/src/`: Kotlin application code, Android resources, unit tests and instrumentation test source.
+- `app/build.gradle.kts`, root Gradle files and `gradle/`: build configuration and wrapper.
+- `app/google-services.json`: Firebase Android client configuration.
+- `firestore.rules`, `firestore.indexes.json`, `firebase.json` and `.firebaserc`: Firebase deployment configuration.
+- `tools/check_rules.py`: checks the deployed Security Rules as real signed-in users, for the
+  access-protection evidence. Takes the test accounts from environment variables; no password
+  is stored in the repository.
+- `docs/sprint3-usability-evaluation.md`: the US-21 task script and results template.
+- `.env.example`: OpenAI configuration template.
+- `APK/`: debug demo APK.
+- `SHA256SUMS.txt`: file integrity checksums.
 
-## Sprint 1 coverage
+Build caches, local SDK paths, IDE settings, logs, private configuration, documentation reports and screenshots are excluded.
 
-| Story | Where |
-|---|---|
-| S1-01 Accounts and profiles | Welcome, Login (role selector, verified against the account), Sign up (role picker), Complete profile, Profile |
-| S1-02 Consent and data controls | More > Care-team sharing (grant/revoke), Privacy (deletion request, retention) |
-| S1-03 Glucose input | Add glucose (manual + unit + time, validation, Generate demo reading, Saved confirmation) |
-| S1-04 Glucose history and trends | History tab (chart with target band, range filters, trend, "Trend unavailable") |
-| S1-05 Doctor review and thresholds | Doctor > Patients (consented only, search, status), Patient detail, Thresholds |
-| S1-06 Medication history | Medications tab > History, Log a dose |
-| S1-07 Medication reminders | Medications tab > Reminders (time, days, enable), notifications + permission handling |
-| S1-08 Patient dashboard | Home: latest reading + status + trend, 7-day chart, upcoming reminders, quick actions |
-| S1-09 Accessible and protected use | Text-size setting, icon + text status, prototype notices, rules, encryption info |
+## Verification and current limits
 
-## Sprint 2 coverage
+The exported source built successfully with `:app:assembleDebug`; `:app:testDebugUnitTest` completed with 87 passed, 0 skipped and 0 failed. The APK signature was verified with Android SDK apksigner. The APK is a debug demonstration build, not a Play Store release.
 
-| Story | Where |
-|---|---|
-| S2-01 Warning response | Alert detail: I'm OK / Treating / Need Help / Contact Doctor, countdown, timeline |
-| S2-02 Caregiver dashboard | Caregiver Home: linked patients, status, recent medication, open alerts |
-| S2-03 Timed escalation | `AlertRules` + AlarmManager: 5 min to caregiver, 5 more to doctor; resolution needs a note |
-| S2-04 Care-team messaging | Messages tab, patient-doctor and caregiver-doctor threads anchored to a patient |
-| S2-05 Chatbot | Chatbot FAB on Home; dose questions refused on-device and redirected |
-| S2-06 Insulin request | More > Insulin requests: context preview, pending status, doctor's reply |
-| S2-07 Doctor-only AI draft | Doctor > Requests > review: draft in `insulinRequests/{id}/private/draft`, rules deny patients |
-| S2-08 Reviewed response | Edit, discard, regenerate, write own, explicit send with confirmation |
-| S2-09 Weekly summaries | More > Weekly summaries; figures computed from records, AI narrative labelled separately |
+Sprint 3 was additionally checked against the live Firebase project:
 
-Sprint 3 entry points (admin screens) remain labelled placeholders.
+- The admin dashboard was driven on an emulator against real data: 38 accounts, 22 patients,
+  10 active cases, 16 alerts. The overview figures, the account list and the alert list all
+  agree because they are computed by one function, `domain/AdminMetrics.kt`, over one
+  snapshot of the same records (US-19, "counts match records").
+- Suspending and reactivating an account was exercised through the Users tab and over the
+  Firestore REST API as three different signed-in users. Seventeen access-control checks pass
+  against the deployed rules, including: a patient or doctor cannot read alerts across
+  patients, a patient cannot make themselves an admin, a suspended account cannot lift its
+  own suspension, and an administrator can change neither their own role nor their own status.
+- Turning **Glucose alerts** off in Settings suppressed the local notification while the alert
+  was still raised and recorded, which is the behaviour the setting describes.
+- Suspending an account while it was signed in ended that session within seconds, and the
+  account signed in again once an administrator reactivated it.
+- Layouts were reviewed in light and dark themes at the default and largest text sizes.
 
-### Escalation without a server
+This is an academic prototype using fictional health data. Known limits:
 
-There is no backend, so the patient's device owns the escalation timers via AlarmManager and
-writes each stage change to Firestore, where the care team's live listeners pick it up. That
-matches the charter's R3 mitigation: server-side alert state, recorded notification attempts,
-and active alerts shown inside the app. Every alert screen carries a **Simulate 5 minutes
-passing** control so a demo does not need a real five-minute wait.
-
-## Firestore data model
-
-```
-users/{uid}                       role, displayName, email, age, diabetesType, relevantHistory, carePlan
-users/{uid}/readings/{id}         valueMgdl, enteredValue, enteredUnit, source, recordedAt, note
-users/{uid}/medications/{id}      name, dose, unit, kind, takenAt, note
-users/{uid}/reminders/{id}        medicationName, hour, minute, days[], enabled
-users/{uid}/settings/thresholds   targetLow, targetHigh, criticalLow, criticalHigh, updatedBy*
-users/{uid}/alerts/{id}           valueMgdl, severity, stage, patientResponse, events[], resolution*
-careLinks/{patientUid_memberUid}  patientUid, memberUid, memberRole, status, grantedAt, revokedAt
-conversations/{id}                patientUid, doctorUid, memberUid, participants[], lastMessage
-conversations/{id}/messages/{id}  senderUid, senderRole, text, sentAt  (append-only)
-insulinRequests/{id}              patientUid, doctorUid, question, context, status, response
-insulinRequests/{id}/private/draft  AI draft - readable only by the assigned doctor
-deletionRequests/{uid}            uid, requestedAt, status
-```
-
-## Project layout
-
-```
-app/src/main/java/com/z/diabetescompanion/
-├── DiabetesCompanionApp.kt, MainActivity.kt
-├── data/
-│   ├── auth/         AuthRepository, FirebaseAuthRepository, AccountService (register + profile)
-│   ├── model/        Domain models (UserProfile, GlucoseReading, MedicationLog, Reminder, ...)
-│   ├── repository/   Repository interfaces
-│   ├── firestore/    Firestore implementations, mappers, snapshot flows, error copy
-│   ├── prefs/        DataStore preferences
-│   └── reminders/    ReminderScheduler, ReminderReceiver, BootReceiver
-├── domain/           GlucoseStatus, TrendCalculator, validation, demo generator
-├── di/AppContainer.kt
-└── ui/
-    ├── App.kt, Session.kt, AppViewModelProvider.kt
-    ├── navigation/   AppNavHost, RootViewModel (session state machine)
-    ├── welcome/, auth/
-    ├── shell/        RoleShell (bottom nav), PatientShell, DoctorShell, CaregiverShell, AdminShell, MoreScreen
-    ├── patient/      home, glucose, medications, profile, sharing
-    ├── doctor/       patients (list, detail, thresholds)
-    ├── settings/     SettingsScreen, PrivacyScreen
-    ├── components/   Buttons, text fields, pickers, chart, status chips, states
-    └── theme/
-```
-
-## Tests
-
-`./gradlew :app:testDebugUnitTest` runs unit tests for validation, status/trend logic,
-demo generation and reminder scheduling.
-
-## Next (Sprint 3)
-
-Admin dashboard, settings refinement, accessibility and compatibility review, user evaluation.
+- **Suspension is enforced at the session, not on every write.** A suspended account is
+  refused at sign-in, has any open session ended, and cannot lift its own suspension or
+  change its own role. It can still write its own records through a direct API call, because
+  enforcing suspension per write would mean reading the user document inside every rule.
+- Scheduled timer/restart recovery after a device reboot has not been exercised end to end on
+  a real device; the alarms are re-armed by `BootReceiver` but only the in-app path is tested.
+- On a 360dp-wide screen at the largest text size, bottom-navigation labels truncate. Icons
+  and the selected-tab indicator still identify each tab. This affects every role's shell,
+  not only the admin one.
+- US-21 needs participant sessions, which are a human activity. The task script and the
+  results template for them are in `docs/sprint3-usability-evaluation.md`; the completion
+  rates in it are not filled in.

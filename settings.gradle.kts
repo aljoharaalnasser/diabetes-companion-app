@@ -21,4 +21,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "Diabetes Companion"
 include(":app")
- 

@@ -132,7 +132,7 @@ fun PatientShell() {
                     MoreItem("Insulin requests", "Ask your doctor and read their reply.", Icons.Rounded.MedicalServices) { nav.navigate(P.REQUESTS) },
                     MoreItem("Care-team sharing", "Grant or revoke access for your doctor and caregiver.", Icons.Rounded.Groups) { nav.navigate(P.SHARING) },
                     MoreItem("Profile", "Age, diabetes type, history and care plan.", Icons.Rounded.PersonOutline) { nav.navigate(P.PROFILE) },
-                    MoreItem("Settings", "Text size, notifications and privacy.", Icons.Rounded.Settings) { nav.navigate(P.SETTINGS) },
+                    MoreItem("Settings", "Appearance, text size and notifications.", Icons.Rounded.Settings) { nav.navigate(P.SETTINGS) },
                     MoreItem("Privacy", "How your data is protected and how to request deletion.", Icons.Rounded.Shield) { nav.navigate(P.PRIVACY) },
                 )
             )

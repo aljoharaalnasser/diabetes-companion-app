@@ -287,9 +287,13 @@ private fun WeekSwitcher(label: String, weeksAgo: Int, onShift: (Int) -> Unit) {
 
 @Composable
 private fun StatsGrid(summary: WeeklySummary) {
+    // Lowest and highest are shown alongside the average because the AI overview is given
+    // all three, and a figure the narrative can mention has to be on the page as well.
     val stats = listOf(
         "Readings" to summary.readingCount.toString(),
         "Average" to (summary.averageMgdl?.let { "$it mg/dL" } ?: "n/a"),
+        "Lowest" to (summary.lowestMgdl?.let { "$it mg/dL" } ?: "n/a"),
+        "Highest" to (summary.highestMgdl?.let { "$it mg/dL" } ?: "n/a"),
         "Time in range" to (summary.timeInRangePercent?.let { "$it%" } ?: "no target"),
         "Doses logged" to summary.doseCount.toString(),
         "Below target" to summary.lowEvents.toString(),

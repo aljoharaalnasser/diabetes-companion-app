@@ -197,7 +197,6 @@ data class ChatbotUiState(
             else -> "Ask a question"
         }
 }
-
 /**
  * General-guidance chatbot (FR-16, S2-05) with the meal insulin calculator.
  *

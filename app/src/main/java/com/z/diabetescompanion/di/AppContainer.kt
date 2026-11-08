@@ -19,6 +19,7 @@ import com.z.diabetescompanion.data.auth.AccountService
 import com.z.diabetescompanion.data.auth.AuthRepository
 import com.z.diabetescompanion.data.auth.FirebaseAuthRepository
 import com.z.diabetescompanion.data.auth.UnconfiguredAuthRepository
+import com.z.diabetescompanion.data.firestore.FirestoreAdminRepository
 import com.z.diabetescompanion.data.firestore.FirestoreAlertRepository
 import com.z.diabetescompanion.data.firestore.FirestoreCareLinkRepository
 import com.z.diabetescompanion.data.firestore.FirestoreDoseSuggestionRepository
@@ -32,6 +33,7 @@ import com.z.diabetescompanion.data.firestore.FirestoreThresholdRepository
 import com.z.diabetescompanion.data.firestore.FirestoreUserRepository
 import com.z.diabetescompanion.data.prefs.UserPreferencesRepository
 import com.z.diabetescompanion.data.reminders.ReminderScheduler
+import com.z.diabetescompanion.data.repository.AdminRepository
 import com.z.diabetescompanion.data.repository.AlertRepository
 import com.z.diabetescompanion.data.repository.CareLinkRepository
 import com.z.diabetescompanion.data.repository.DoseSuggestionRepository
@@ -92,12 +94,18 @@ class AppContainer(private val context: Context) {
     val icrRepository: IcrRepository by lazy { FirestoreIcrRepository(firestore) }
     val doseSuggestionRepository: DoseSuggestionRepository by lazy { FirestoreDoseSuggestionRepository(firestore) }
 
+    // --- Sprint 3 administration ---------------------------------------------
+    val adminRepository: AdminRepository by lazy { FirestoreAdminRepository(firestore) }
+
     val preferencesRepository: UserPreferencesRepository by lazy { UserPreferencesRepository(context) }
     val reminderScheduler: ReminderScheduler by lazy { ReminderScheduler(context) }
     val alertEscalationScheduler: AlertEscalationScheduler by lazy { AlertEscalationScheduler(context) }
 
     val alertService: AlertService by lazy {
-        AlertService(context, alertRepository, thresholdRepository, alertEscalationScheduler)
+        AlertService(
+            context, alertRepository, thresholdRepository,
+            alertEscalationScheduler, preferencesRepository,
+        )
     }
 
     val accountService: AccountService by lazy {

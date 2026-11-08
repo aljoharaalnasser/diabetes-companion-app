@@ -90,7 +90,7 @@ fun CaregiverShell() {
             MoreScreen(
                 items = listOf(
                     MoreItem("Profile", "Your name as patients see it.", Icons.Rounded.PersonOutline) { nav.navigate(C.PROFILE) },
-                    MoreItem("Settings", "Text size and notifications.", Icons.Rounded.Settings) { nav.navigate(C.SETTINGS) },
+                    MoreItem("Settings", "Appearance, text size and notifications.", Icons.Rounded.Settings) { nav.navigate(C.SETTINGS) },
                     MoreItem("Privacy", "How patient data is protected.", Icons.Rounded.Shield) { nav.navigate(C.PRIVACY) },
                 )
             )
